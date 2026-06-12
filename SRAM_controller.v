@@ -34,7 +34,7 @@ module sync_sram_ctrl #(
     // 1. State Register
     //============================================================
     always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
+        if(!rst_n) begin
             state <= IDLE;
         end else begin
             state <= next_state;
@@ -44,29 +44,29 @@ module sync_sram_ctrl #(
     //============================================================
     // 2. Next State Logic
     //============================================================
-    always @(*) begin
-        next_state = state;
 
-        case (state)
-            IDLE: begin
-                if (wr_req) begin
+    always @(*) begin
+        next_state = state;                 // To prevent Latch
+        case(state)
+            IDLE : begin
+                if(wr_req) begin
                     next_state = WRITE;
-                end else if (rd_req) begin
+                end else if(rd_req) begin
                     next_state = READ_WAIT;
                 end else begin
                     next_state = IDLE;
                 end
             end
 
-            WRITE: begin
+            WRITE : begin
                 next_state = IDLE;
             end
-
-            READ_WAIT: begin
+            
+            READ_WAIT : begin
                 next_state = READ_CAPTURE;
             end
 
-            READ_CAPTURE: begin
+            READ_CAPTURE : begin
                 next_state = IDLE;
             end
 
@@ -76,68 +76,54 @@ module sync_sram_ctrl #(
         endcase
     end
 
+
     //============================================================
     // 3. Output and Control Logic
     //============================================================
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            data_out      <= {DATA_WIDTH{1'b0}};
-            ready         <= 1'b0;
 
+    always @(posedge clk or negedge rst_n) begin
+        if(!rst_n) begin
+            data_out      <= {DATA_WIDTH{1'b0}};   
             sram_addr     <= {ADDR_WIDTH{1'b0}};
             sram_data_out <= {DATA_WIDTH{1'b0}};
+            ready         <= 1'b1; 
             sram_ce_n     <= 1'b1;
             sram_we_n     <= 1'b1;
         end else begin
-            // default value
-            sram_ce_n <= 1'b1;
-            sram_we_n <= 1'b1;
-            ready     <= 1'b0;
-
-            case (state)
-                IDLE: begin
-                    ready <= 1'b1;
-
-                    if (wr_req) begin
-                        sram_addr     <= addr;
-                        sram_data_out <= data_in;
-                        sram_ce_n     <= 1'b0;
-                        sram_we_n     <= 1'b0;
-                        ready         <= 1'b0;
-                    end else if (rd_req) begin
-                        sram_addr <= addr;
-                        sram_ce_n <= 1'b0;
+            case(state)
+                IDLE : begin
+                        ready     <= 1'b1;
+                        sram_ce_n <= 1'b1;
                         sram_we_n <= 1'b1;
-                        ready     <= 1'b0;
+
+                    if(wr_req || rd_req) begin
+                        sram_addr   <= addr;                            // wiring address
+                        sram_ce_n   <= 1'b0;                            // Chip Enable
+                        ready       <= 1'b0;                            // processing...
+                        if(wr_req) begin
+                            sram_we_n       <= 1'b0;
+                            sram_data_out   <= data_in;
+                        end else if(rd_req) begin
+                            sram_we_n       <= 1'b1;
+                        end
                     end
                 end
 
-                WRITE: begin
-                    ready     <= 1'b1;
-                    sram_ce_n <= 1'b1;
-                    sram_we_n <= 1'b1;
+                WRITE : begin                                           // Write has been already done by IDLE + wr_req, (1)~(3) is same as IDLE
+                    sram_ce_n           <= 1'b1;                        // Chip disable ... (1)
+                    sram_we_n           <= 1'b1;                        // write disable ... (2)
+                    ready               <= 1'b1;                        // process done ... (3)
                 end
 
-                READ_WAIT: begin                       // SRAM read data is being updated in this cycle.
-                    ready     <= 1'b0;
-                    sram_ce_n <= 1'b1;
-                    sram_we_n <= 1'b1;
+                READ_WAIT : begin
+                    sram_ce_n           <= 1'b1;                        // Chip disable
                 end
 
-                READ_CAPTURE: begin                    // Now sram_data_in is valid.
-                    data_out  <= sram_data_in;
-                    ready     <= 1'b1;
-                    sram_ce_n <= 1'b1;
-                    sram_we_n <= 1'b1;
-                end
-
-                default: begin
-                    ready     <= 1'b1;
-                    sram_ce_n <= 1'b1;
-                    sram_we_n <= 1'b1;
+                READ_CAPTURE : begin
+                    data_out            <= sram_data_in;                // wiring
+                    ready               <= 1'b1;                        // process done
                 end
             endcase
         end
     end
-
 endmodule
